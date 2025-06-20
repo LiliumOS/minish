@@ -1,0 +1,21 @@
+[package]
+name = "minish"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.23.0", features = ["derive", "latest_stable_rust"] }
+error-repr = { version = "0.1.0", features = ["alloc", "error-track_caller"] }
+genio = { version = "0.2.1", default-features = false }
+lilium-sys = { git = "https://github.com/LiliumOS/lilium-sys.git", version = "0.1.0", default-features = false, features = [
+    "alloc",
+    "core-subsys",
+    "error-enum",
+    "bytemuck",
+    "libc",
+    "link-usi",
+    "api",
+    "sync-mutex",
+] }
+memchr = { version = "2.7.4", default-features = false, features = ["alloc"] }
+talc = "4.4.2"
