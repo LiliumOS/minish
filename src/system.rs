@@ -83,17 +83,12 @@ impl OomHandler for CreateMappingAlloc {
                 .0
                 .pad_to_align();
         }
-        eprintln!("Expanding map by alloc_layout={alloc_layout:?} (requested layout={layout:?})");
         let block = talc
             .oom_handler
             .allocate_zeroed(alloc_layout)
             .map_err(|_| ())?;
 
-        eprintln!("Allocated: {block:p}");
-
         let span = unsafe { talc.claim(Span::from_slice(block.as_ptr()))? };
-
-        eprintln!("Claimed {span:?}");
         Ok(())
     }
 }

@@ -4,6 +4,10 @@
 
 extern crate alloc;
 
+unsafe extern "C" {
+    pub safe fn exit(x: i32) -> !;
+}
+
 mod helpers;
 mod io;
 mod shell;
@@ -20,6 +24,8 @@ use lilium_sys::{
     uuid::parse_uuid,
 };
 use shell::{parse_shell, split_shell};
+
+use crate::shell::exec_line;
 
 fn main() -> io::Result<i32> {
     let mut line = String::new();
@@ -41,7 +47,13 @@ fn main() -> io::Result<i32> {
         let line = parse_shell(split_shell(&line));
 
         if let Some(_) = line.command {
-            println!("Read: {line}");
+            eprintln!("{line}");
+            match exec_line(line) {
+                Ok(()) => {}
+                Err(e) => {
+                    println!("{e}")
+                }
+            }
         }
     }
 }

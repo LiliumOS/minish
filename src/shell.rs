@@ -1,6 +1,6 @@
 use alloc::{borrow::Cow, string::String, vec::Vec};
 
-use crate::helpers::SplitOnceOwned;
+use crate::{exit, helpers::SplitOnceOwned, io, println};
 
 pub fn split_shell(x: &str) -> SplitShell {
     SplitShell(x)
@@ -159,4 +159,26 @@ pub fn parse_shell<'a, I: Iterator<Item = Cow<'a, str>>>(mut iter: I) -> ShellLi
     line.args.extend(iter);
 
     line
+}
+
+pub fn exec_line(line: ShellLine) -> io::Result<()> {
+    match line.command.as_deref() {
+        Some(c @ ("return" | "exit" | "logout")) => {
+            println!("exit command: {c}");
+            let status = if let Some(status) = line.args.get(0).map(|v| &**v) {
+                let val = status
+                    .parse()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+                val
+            } else {
+                0
+            };
+            exit(status)
+        }
+        Some(n) => Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            alloc::format!("Command {n} not found"),
+        )),
+        None => Ok(()),
+    }
 }
