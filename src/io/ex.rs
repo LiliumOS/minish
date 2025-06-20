@@ -18,9 +18,15 @@ impl<R: BufRead> BufReadEx for R {
         loop {
             let inner_buf = self.fill_buf()?;
 
+            if inner_buf.len() == 0 {
+                return Ok(total_len);
+            }
+
             match memchr(b, inner_buf) {
                 Some(n) => {
-                    total_len += n;
+                    let n = n + 1;
+                    eprintln!("Read {n} bytes");
+                    total_len += n + 1;
                     buf.extend_from_slice(&inner_buf[..n]);
                     self.consume(n);
                     break Ok(total_len);
