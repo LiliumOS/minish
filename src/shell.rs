@@ -1,6 +1,22 @@
-use alloc::{borrow::Cow, string::String, vec::Vec};
+use core::cell::LazyCell;
 
-use crate::{exit, helpers::SplitOnceOwned, io, println};
+use alloc::{borrow::Cow, string::String, vec::Vec};
+use bytemuck::Zeroable;
+use lilium_sys::sys::{
+    fs::{ACCESS_READ, FileHandle, FileOpenOptions, OP_DIRECTORY_ACCESS, OpenFile},
+    handle::HandlePtr,
+    io::MODE_BLOCKING,
+    kstr::{KCSlice, KStrCPtr},
+    process::{CreateProcess, JoinProcess},
+    thread::JoinStatus,
+};
+
+use crate::{
+    exit,
+    helpers::SplitOnceOwned,
+    io::{self, Error},
+    println,
+};
 
 pub fn split_shell(x: &str) -> SplitShell {
     SplitShell(x)
@@ -161,7 +177,35 @@ pub fn parse_shell<'a, I: Iterator<Item = Cow<'a, str>>>(mut iter: I) -> ShellLi
     line
 }
 
-pub fn exec_line(line: ShellLine) -> io::Result<()> {
+#[thread_local]
+static PATH: LazyCell<Vec<HandlePtr<FileHandle>>> = LazyCell::new(|| {
+    crate::start::var("PATH")
+        .into_iter()
+        .flat_map(|v| v.split(':'))
+        .filter_map(|v| {
+            let mut hdl = HandlePtr::null();
+            lilium_sys::result::Error::from_code(unsafe {
+                OpenFile(
+                    &mut hdl,
+                    HandlePtr::null(),
+                    KStrCPtr::from_str(v),
+                    &FileOpenOptions {
+                        stream_override: KStrCPtr::empty(),
+                        access_mode: ACCESS_READ,
+                        op_mode: OP_DIRECTORY_ACCESS,
+                        create_acl: HandlePtr::null(),
+                        blocking_mode: MODE_BLOCKING,
+                        extended_options: KCSlice::empty(),
+                    },
+                )
+            })
+            .ok()
+            .map(|_| hdl)
+        })
+        .collect()
+});
+
+pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
     match line.command.as_deref() {
         Some(c @ ("return" | "exit" | "logout")) => {
             println!("exit command: {c}");
@@ -175,10 +219,49 @@ pub fn exec_line(line: ShellLine) -> io::Result<()> {
             };
             exit(status)
         }
-        Some(n) => Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            alloc::format!("Command {n} not found"),
-        )),
-        None => Ok(()),
+        Some(n) => {
+            println!("Running Command: {n}");
+            let mut hdl = HandlePtr::null();
+            if !n.contains('/') {
+                'a: {
+                    let mut res = lilium_sys::sys::error::DOES_NOT_EXIST;
+                    for path_ent in PATH.iter().copied() {
+                        res = unsafe {
+                            CreateProcess(
+                                &mut hdl,
+                                path_ent,
+                                &KStrCPtr::from_str(n),
+                                &KCSlice::empty(),
+                            )
+                        };
+                        if res == 0 {
+                            break 'a;
+                        }
+                    }
+                    return Err(io::Error::from_raw_os_error(res));
+                }
+            } else {
+                let res = unsafe {
+                    CreateProcess(
+                        &mut hdl,
+                        HandlePtr::null(),
+                        &KStrCPtr::from_str(n),
+                        &KCSlice::empty(),
+                    )
+                };
+                if res < 0 {
+                    return Err(io::Error::from_raw_os_error(res));
+                }
+            }
+            let mut status = bytemuck::zeroed();
+            let res = unsafe { JoinProcess(hdl, &mut status) };
+
+            if res < 0 {
+                Err(io::Error::from_raw_os_error(res))
+            } else {
+                Ok(Some(status))
+            }
+        }
+        None => Ok(None),
     }
 }

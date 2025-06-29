@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(never_type, pattern, allocator_api, alloc_layout_extra)]
+#![feature(never_type, pattern, allocator_api, alloc_layout_extra, thread_local)]
 
 extern crate alloc;
 
@@ -46,12 +46,12 @@ fn main() -> io::Result<i32> {
 
         let line = parse_shell(split_shell(&line));
 
-        if let Some(_) = line.command {
+        if let Some(cmd) = &line.command {
             eprintln!("{line}");
-            match exec_line(line) {
-                Ok(()) => {}
+            match exec_line(&line) {
+                Ok(_) => {}
                 Err(e) => {
-                    println!("{e}")
+                    println!("Error spawning {cmd}: {e}")
                 }
             }
         }
