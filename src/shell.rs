@@ -1,4 +1,4 @@
-use core::cell::LazyCell;
+use core::{cell::LazyCell, ops::Deref};
 
 use alloc::{borrow::Cow, string::String, vec::Vec};
 use bytemuck::Zeroable;
@@ -7,12 +7,16 @@ use lilium_sys::sys::{
     handle::HandlePtr,
     io::MODE_BLOCKING,
     kstr::{KCSlice, KStrCPtr},
-    process::{CreateProcess, JoinProcess},
+    option::ExtendedOptionHead,
+    process::{
+        CREATE_PROCESS_OPTION_ARGS, CreateProcess, CreateProcessOption, CreateProcessOptionArgs,
+        JoinProcess,
+    },
     thread::JoinStatus,
 };
 
 use crate::{
-    exit,
+    eprintln, exit,
     helpers::SplitOnceOwned,
     io::{self, Error},
     println,
@@ -179,10 +183,12 @@ pub fn parse_shell<'a, I: Iterator<Item = Cow<'a, str>>>(mut iter: I) -> ShellLi
 
 #[thread_local]
 static PATH: LazyCell<Vec<HandlePtr<FileHandle>>> = LazyCell::new(|| {
-    crate::start::var("PATH")
+    eprintln!("Opening PATH");
+    let v = crate::start::var("PATH")
         .into_iter()
         .flat_map(|v| v.split(':'))
         .filter_map(|v| {
+            eprintln!("Opening {v}");
             let mut hdl = HandlePtr::null();
             lilium_sys::result::Error::from_code(unsafe {
                 OpenFile(
@@ -202,7 +208,9 @@ static PATH: LazyCell<Vec<HandlePtr<FileHandle>>> = LazyCell::new(|| {
             .ok()
             .map(|_| hdl)
         })
-        .collect()
+        .collect();
+    eprintln!("Closing PATH");
+    v
 });
 
 pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
@@ -222,6 +230,23 @@ pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
         Some(n) => {
             println!("Running Command: {n}");
             let mut hdl = HandlePtr::null();
+            let args = line
+                .command
+                .iter()
+                .chain(line.args.iter())
+                .map(Deref::deref)
+                .map(KStrCPtr::from_str)
+                .collect::<Vec<_>>();
+
+            let opts = [CreateProcessOption {
+                args: CreateProcessOptionArgs {
+                    header: ExtendedOptionHead {
+                        ty: CREATE_PROCESS_OPTION_ARGS,
+                        ..ExtendedOptionHead::ZERO
+                    },
+                    arguments: KCSlice::from_slice(&args),
+                },
+            }];
             if !n.contains('/') {
                 'a: {
                     let mut res = lilium_sys::sys::error::DOES_NOT_EXIST;
@@ -231,7 +256,7 @@ pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
                                 &mut hdl,
                                 path_ent,
                                 &KStrCPtr::from_str(n),
-                                &KCSlice::empty(),
+                                &KCSlice::from_slice(&opts),
                             )
                         };
                         if res == 0 {
@@ -246,7 +271,7 @@ pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
                         &mut hdl,
                         HandlePtr::null(),
                         &KStrCPtr::from_str(n),
-                        &KCSlice::empty(),
+                        &KCSlice::from_slice(&opts),
                     )
                 };
                 if res < 0 {
