@@ -182,13 +182,11 @@ pub fn parse_shell<'a, I: Iterator<Item = Cow<'a, str>>>(mut iter: I) -> ShellLi
 }
 
 #[thread_local]
-static PATH: LazyCell<Vec<HandlePtr<FileHandle>>> = LazyCell::new(|| {
-    eprintln!("Opening PATH");
+static PATH: LazyCell<Vec<(&'static str, HandlePtr<FileHandle>)>> = LazyCell::new(|| {
     let v = crate::start::var("PATH")
         .into_iter()
         .flat_map(|v| v.split(':'))
         .filter_map(|v| {
-            eprintln!("Opening {v}");
             let mut hdl = HandlePtr::null();
             lilium_sys::result::Error::from_code(unsafe {
                 OpenFile(
@@ -206,10 +204,9 @@ static PATH: LazyCell<Vec<HandlePtr<FileHandle>>> = LazyCell::new(|| {
                 )
             })
             .ok()
-            .map(|_| hdl)
+            .map(|_| (v, hdl))
         })
         .collect();
-    eprintln!("Closing PATH");
     v
 });
 
@@ -228,7 +225,6 @@ pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
             exit(status)
         }
         Some(n) => {
-            println!("Running Command: {n}");
             let mut hdl = HandlePtr::null();
             let args = line
                 .command
@@ -250,7 +246,7 @@ pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
             if !n.contains('/') {
                 'a: {
                     let mut res = lilium_sys::sys::error::DOES_NOT_EXIST;
-                    for path_ent in PATH.iter().copied() {
+                    for (path, path_ent) in PATH.iter().copied() {
                         res = unsafe {
                             CreateProcess(
                                 &mut hdl,
@@ -259,7 +255,7 @@ pub fn exec_line(line: &ShellLine) -> io::Result<Option<JoinStatus>> {
                                 &KCSlice::from_slice(&opts),
                             )
                         };
-                        if res == 0 {
+                        if res >= 0 {
                             break 'a;
                         }
                     }

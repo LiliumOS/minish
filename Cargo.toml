@@ -17,5 +17,5 @@ lilium-sys = { git = "https://github.com/LiliumOS/lilium-sys.git", version = "0.
     "api",
     "sync-mutex",
 ] }
-memchr = { version = "2.7.4", default-features = false, features = ["alloc"] }
 talc = "4.4.2"
+memchr = { version = "2.7.4", default-features = false, features = ["alloc"] }

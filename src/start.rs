@@ -82,6 +82,7 @@ impl Iterator for Vars {
         if val.is_null() {
             return None;
         }
+        self.0 = unsafe { self.0.add(1) };
 
         let cstr = unsafe { CStr::from_ptr(val) };
         let bytes = cstr.to_bytes();
